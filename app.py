@@ -12,12 +12,11 @@ from flask_limiter import Limiter
 app = Flask(__name__)
 limiter = Limiter(app, strategy="moving-window", key_func = lambda :  request.args['user_name'])
 
-
 webhook_url = ""
 osukey = ""
 giphykey = ""
 
-nsfw_channels = ("nsfw", "butts")
+nsfw_channels = ("#nsfw", "#butts", "#yuri", "#yaoi")
 
 def verify_command(key):
     read_config()
@@ -37,12 +36,9 @@ def channel_whitelist():
 @limiter.limit("2/minute")
 @app.route("/osu", methods=['GET'])
 def osu():
-    username = request.args['user_name']
-    username = "@" + username
-    channel = request.args['channel_name']
-    channel = "#" + channel
-    text = request.args['text']
-    userid = text
+    username = "@" + request.args['user_name']
+    channel = "#" + request.args['channel_name']
+    userid = request.args['text']
     osu = json.loads(osu_apy.get_user(osukey, userid, 0, "", 1).decode('utf8'))
     if osu != []:
         osu = osu[0]
@@ -83,7 +79,6 @@ def osu():
 
 def getgif(searchterm, unsafe=False):
     searchterm = quote(searchterm)
-    
     safe = "&safe=" if unsafe else "&safe=active"
     searchurl = "https://www.google.com/search?tbs=itp:animated&tbm=isch&q={0}{1}".format(searchterm, safe)
 
@@ -104,13 +99,10 @@ def getgif(searchterm, unsafe=False):
 @app.route("/gif", methods=['GET'])
 def gigif():
     unsafe = False
-    username = request.args['user_name']
-    username = "@" + username
-    channel = request.args['channel_name']
-    print(channel)
+    username = "@" + request.args['user_name']
+    channel = "#" + request.args['channel_name']
     if channel in nsfw_channels:
         unsafe = True
-    channel = "#" + channel
     text = request.args['text']
     if text == "":
         return "", 200
@@ -131,10 +123,8 @@ def gigif():
 @limiter.limit("2/minute")
 @app.route("/giphy", methods=['GET'])
 def giphy():
-    username = request.args['user_name']
-    username = "@" + username
-    channel = request.args['channel_name']
-    channel = "#" + channel
+    username = "@" + request.args['user_name']
+    channel = "#" + request.args['channel_name']
     text = request.args['text']
     if text == "":
         return "", 200
@@ -147,8 +137,6 @@ def giphy():
         }
     r = requests.post("webhook_url", data=json.dumps(payload))
     return "", 200
-
-
 
 if __name__ == "__main__":
         app.run(host='0.0.0.0')

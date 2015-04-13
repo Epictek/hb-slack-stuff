@@ -1,2 +1,2 @@
 # hb-slack-stuff
-Commands the the hummingbird slack chat
+Commands for the hummingbird slack chat

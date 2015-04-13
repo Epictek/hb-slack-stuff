@@ -14,7 +14,6 @@ app = Flask(__name__)
 limiter = Limiter(app, strategy="moving-window", key_func = lambda :  request.args['user_name'])
 
 def verify_command(key):
-    read_config()
     if key == token_key:
         return True
     else:
@@ -34,7 +33,7 @@ def osu():
     username = "@" + request.args['user_name']
     channel = "#" + request.args['channel_name']
     userid = request.args['text']
-    osu = json.loads(osu_apy.get_user(config['osukey'], userid, 0, "", 1).decode('utf8'))
+    osu = json.loads(osu_apy.get_user(config.osukey, userid, 0, "", 1).decode('utf8'))
     if osu != []:
         osu = osu[0]
         osu['accuracy'] = '{:.2f}%'.format(float(osu['accuracy']))
@@ -66,7 +65,7 @@ def osu():
             "color": "#F35A00"
         }]
         }
-        r = requests.post(config['webhook_url'], data=json.dumps(payload))
+        r = requests.post(config.webhook_url, data=json.dumps(payload))
         return "", 200
     return "User not found", 200
 
@@ -90,13 +89,13 @@ def getgif(searchterm, unsafe=False):
     else:
         return "No result"
 
-@limiter.limit("2/minute")
+@limiter.limit("1/minute")
 @app.route("/gif", methods=['GET'])
 def gigif():
     unsafe = False
     username = "@" + request.args['user_name']
     channel = "#" + request.args['channel_name']
-    if channel in config['nsfw_channels']:
+    if channel in config.nsfw_channels:
         unsafe = True
     text = request.args['text']
     if text == "":
@@ -112,10 +111,10 @@ def gigif():
             "image_url": gif
          }]
         }
-    r = requests.post(config['webhook_url'], data=json.dumps(payload))
+    r = requests.post(config.webhook_url, data=json.dumps(payload))
     return "", 200
 
-@limiter.limit("2/minute")
+@limiter.limit("1/minute")
 @app.route("/giphy", methods=['GET'])
 def giphy():
     username = "@" + request.args['user_name']
@@ -130,8 +129,8 @@ def giphy():
         "icon_url": "https://api.giphy.com/img/api_giphy_logo.png",
         "text": username + ' Gif for: "' + text + '"\n' + giph.url,
         }
-    r = requests.post(config['webhook_url'], data=json.dumps(payload))
+    r = requests.post(config.webhook_url, data=json.dumps(payload))
     return "", 200
 
 if __name__ == "__main__":
-        app.run(host='0.0.0.0')
+        app.run(debug=True, host='0.0.0.0')

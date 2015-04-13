@@ -9,7 +9,8 @@ from random import shuffle
 from giphypop import translate
 from flask_limiter import Limiter
 import config
-from datetime import timedelta, datetime
+
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 limiter = Limiter(app, strategy="moving-window", key_func = lambda :  request.args['user_name'])
@@ -70,6 +71,26 @@ def osu():
         return "", 200
     return "User not found", 200
 
+intervals = (
+    ('years', 525600),
+    ('month', 43200),
+    ('days', 1440),   
+    ('hours', 60),
+    ('minutes', 1),
+    )
+
+def format_minutes(minutes):
+    result = []
+
+    for name, count in intervals:
+        value = minutes // count
+        if value:
+            minutes -= value * count
+            if value == 1:
+                name = name.rstrip('s')
+            result.append("{} {}".format(value, name))
+    return ', '.join(result)
+
 
 @limiter.limit("2/minute")
 @app.route("/hb", methods=['GET'])
@@ -84,9 +105,7 @@ def hb():
     user = hb['users'][0]
     info = hb['user_info']
     avatar = user['avatar_template'].replace("{size}", "thumb")
-    rd = timedelta(minutes = info['life_spent_on_anime'])
-#    print(rd)
-#    print("%d years, %d months, %d days, %d hours, %d minutes and %d seconds" % (rd.years, rd.months, rd.days, rd.hours, rd.minutes, rd.seconds))
+    time = info['life_spent_on_anime']
     payload = {
         "channel": channel,
         "username": "Hummingbird",
@@ -102,14 +121,14 @@ def hb():
                     "short": False
                 }, {
                     "title": "Life spent on cartoons",
-                    "value": info['life_spent_on_anime'],
+                    "value": format_minutes(time),
                     "short": False
                 }, {
                     "title": "Anime Watched",
                     "value": info['anime_watched'],
                     "short": True
                 }],
-            "color": "#F35A00"
+            "color": "#EC8661"
         }]
         }
     r = requests.post(config.webhook_url, data=json.dumps(payload))

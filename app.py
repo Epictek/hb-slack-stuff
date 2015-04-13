@@ -9,6 +9,7 @@ from random import shuffle
 from giphypop import translate
 from flask_limiter import Limiter
 import config
+from datetime import timedelta, datetime
 
 app = Flask(__name__)
 limiter = Limiter(app, strategy="moving-window", key_func = lambda :  request.args['user_name'])
@@ -43,7 +44,7 @@ def osu():
         "icon_url": "http://a.ppy.sh/" + osu['user_id'] + "_1.png",
         "attachments": [{
                 "fallback": username + " Osu! stats for:" + osu['username'] + "\n Accuracy:" + osu['accuracy'] + " Rank: " + osu['pp_rank'] + " PP:" + osu['pp_raw'] + " Plays:" +osu['playcount'],
-                "text": username + " Osu! stats for: <https://osu.ppy.sh/u/" + osu['username'] + "|" + osu['username'] + "> :" + osu['country'] + ":",
+                "text": username + " Osu! stats for: <https://osu.ppy.sh/u/" + osu['username'] + "|" + osu['username'] + ">:" + osu['country'] + ":",
                 "title" : osu['username'],
                 "fields": [{
                     "title": "Rank",
@@ -69,6 +70,51 @@ def osu():
         return "", 200
     return "User not found", 200
 
+
+@limiter.limit("2/minute")
+@app.route("/hb", methods=['GET'])
+def hb():
+    username = "@" + request.args['user_name']
+    channel = "#" + request.args['channel_name']
+    userid = request.args['text']
+    r = requests.get("https://hummingbird.me/user_infos/" + userid)
+    if r.status_code == 404:
+        return "User not found", 200
+    hb = r.json()
+    user = hb['users'][0]
+    info = hb['user_info']
+    avatar = user['avatar_template'].replace("{size}", "thumb")
+    rd = timedelta(minutes = info['life_spent_on_anime'])
+#    print(rd)
+#    print("%d years, %d months, %d days, %d hours, %d minutes and %d seconds" % (rd.years, rd.months, rd.days, rd.hours, rd.minutes, rd.seconds))
+    payload = {
+        "channel": channel,
+        "username": "Hummingbird",
+        "icon_url": avatar,
+        "text" : username,
+        "attachments": [{
+                "fallback": username + " Hummingbird: https://hummingbird.me/" + user['id'],
+                "title":"<https://hummingbird.me/u/" + user['id'] + "|" + user['id'] + ">",
+                "text": user['bio'],
+                "fields": [{
+                    "title": user['waifu_or_husbando'],
+                    "value": user['waifu'],
+                    "short": False
+                }, {
+                    "title": "Life spent on cartoons",
+                    "value": info['life_spent_on_anime'],
+                    "short": False
+                }, {
+                    "title": "Anime Watched",
+                    "value": info['anime_watched'],
+                    "short": True
+                }],
+            "color": "#F35A00"
+        }]
+        }
+    r = requests.post(config.webhook_url, data=json.dumps(payload))
+    return "", 200
+
 #gif code modified from https://github.com/llimllib/limbo/blob/master/limbo/plugins/gif.py
 
 def getgif(searchterm, unsafe=False):
@@ -84,7 +130,7 @@ def getgif(searchterm, unsafe=False):
     gifs = re.findall(r'imgurl.*?(http.*?)\\', result)
     shuffle(gifs)
 
-    if gifs:
+    if len(gifs) > 1:
         return unquote(gifs[0])
     else:
         return "No result"
@@ -104,12 +150,8 @@ def gigif():
     payload = {
         "channel": channel,
         "username": "GIF",
-        "icon_url": "http://lh4.googleusercontent.com/-v0soe-ievYE/AAAAAAAAAAI/AAAAAAAC9I4/mrS2pJ4axaQ/photo.jpg?sz=48",
-        "attachments": [{
-            "fallback": username + " gif for:" + text + " " + gif,
-            "text": username + ' Gif for: "' + text + '"',
-            "image_url": gif
-         }]
+        "icon_url": "https://a.pomf.se/ghfazr.jpg",
+        "text": username + ' "' + text + '" ' + gif
         }
     r = requests.post(config.webhook_url, data=json.dumps(payload))
     return "", 200
@@ -127,7 +169,7 @@ def giphy():
         "channel": channel,
         "username": "Giphy",
         "icon_url": "https://api.giphy.com/img/api_giphy_logo.png",
-        "text": username + ' Gif for: "' + text + '"\n' + giph.url,
+        "text": username + ' "' + text + '"\n' + giph.url,
         }
     r = requests.post(config.webhook_url, data=json.dumps(payload))
     return "", 200

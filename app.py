@@ -9,8 +9,11 @@ from random import shuffle
 from giphypop import translate
 from flask_limiter import Limiter
 import config
-
 from datetime import datetime, timedelta
+import pylast
+import soundcloud
+
+client = soundcloud.Client(client_id=config.soundcloud_client_id)
 
 app = Flask(__name__)
 limiter = Limiter(app, strategy="moving-window", key_func = lambda :  request.args['user_name'])
@@ -21,6 +24,8 @@ def verify_command(key):
     else:
         return False
 
+lastfm_network = pylast.LastFMNetwork(api_key=config.lastfm_api_key, api_secret=config.lastfm_api_secret)
+
 @app.errorhandler(429)
 def ratelimit_handler(e):
     return "ratelimit exceeded %s" % e.description, 429
@@ -28,6 +33,42 @@ def ratelimit_handler(e):
 @limiter.request_filter
 def channel_whitelist():
     return request.args['channel_name'] == "random"
+
+
+@limiter.limit("2/minute")
+@app.route("/np", methods=['GET'])
+def np():
+    username = "@" + request.args['user_name']
+    channel = "#" + request.args['channel_name']
+    userid = request.args['text']
+    if userid == "":
+       return "", 200
+    np = lastfm_network.get_user(userid).get_now_playing()
+    if np == None:
+        return "No song playing", 200
+    tracks = client.get('/tracks', q=np.artist.name + " " + np.title)
+    try:
+        url = tracks[0].permalink_url
+    except:
+        url = ""
+    payload = {
+        "channel": channel,
+        "username": "last.fm",
+        "icon_url": "https://a.pomf.se/lxwffj.png",
+        "text": username + ": <http://last.fm/user/" + userid + "|" +  userid + "> is currently listening to " + np.artist.name + " - " + np.title + "\n" ,
+         "unfurl_links": False
+    }
+    r = requests.post(config.webhook_url, data=json.dumps(payload))
+    payload = {
+        "channel": channel,
+        "username": "last.fm",
+        "icon_url": "https://a.pomf.se/lxwffj.png",
+        "text": url,
+        "unfurl_links": True
+    }
+    r = requests.post(config.webhook_url, data=json.dumps(payload))
+    return "", 200
+
 
 @limiter.limit("2/minute")
 @app.route("/osu", methods=['GET'])
@@ -64,7 +105,7 @@ def osu():
                     "value": osu['playcount'],
                     "short": True
                 }],
-            "color": "#F35A00"
+            "color": "#FF66A9"
         }]
         }
         r = requests.post(config.webhook_url, data=json.dumps(payload))
@@ -159,6 +200,8 @@ def getgif(searchterm, unsafe=False):
 def gigif():
     unsafe = False
     username = "@" + request.args['user_name']
+    if username == "@xnaas":
+        return "ey b0ss fuck you man", 200
     channel = "#" + request.args['channel_name']
     if channel in config.nsfw_channels:
         unsafe = True
@@ -184,6 +227,8 @@ def giphy():
     if text == "":
         return "", 200
     giph = translate(text)
+    if giph == None:
+       return "no giphy found", 200
     payload = {
         "channel": channel,
         "username": "Giphy",

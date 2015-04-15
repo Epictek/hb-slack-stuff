@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, g
 import requests
 import osu_apy
 import decimal
@@ -12,11 +12,15 @@ import config
 from datetime import datetime, timedelta
 import pylast
 import soundcloud
+import redis
+
+redis = redis.StrictRedis(host='localhost', port=6379)
 
 client = soundcloud.Client(client_id=config.soundcloud_client_id)
 
 app = Flask(__name__)
-limiter = Limiter(app, strategy="moving-window", key_func = lambda :  request.args['user_name'])
+
+limiter = Limiter(app, strategy="moving-window", storage_uri="redis://localhost:6379",  key_func = lambda :  request.args['user_name'])
 
 def verify_command(key):
     if key == token_key:
@@ -33,7 +37,6 @@ def ratelimit_handler(e):
 @limiter.request_filter
 def channel_whitelist():
     return request.args['channel_name'] == "random"
-
 
 @limiter.limit("2/minute")
 @app.route("/np", methods=['GET'])
@@ -86,7 +89,7 @@ def osu():
         "icon_url": "http://a.ppy.sh/" + osu['user_id'] + "_1.png",
         "attachments": [{
                 "fallback": username + " Osu! stats for:" + osu['username'] + "\n Accuracy:" + osu['accuracy'] + " Rank: " + osu['pp_rank'] + " PP:" + osu['pp_raw'] + " Plays:" +osu['playcount'],
-                "text": username + " Osu! stats for: <https://osu.ppy.sh/u/" + osu['username'] + "|" + osu['username'] + ">:" + osu['country'] + ":",
+                "text": username + " Osu! stats for: <https://osu.ppy.sh/u/" + osu['username'] + "|" + osu['username'] + "> :" + osu['country'] + ":",
                 "title" : osu['username'],
                 "fields": [{
                     "title": "Rank",
@@ -193,15 +196,13 @@ def getgif(searchterm, unsafe=False):
     if len(gifs) > 1:
         return unquote(gifs[0])
     else:
-        return "No result"
+        return False
 
 @limiter.limit("1/minute")
 @app.route("/gif", methods=['GET'])
 def gigif():
     unsafe = False
     username = "@" + request.args['user_name']
-    if username == "@xnaas":
-        return "ey b0ss fuck you man", 200
     channel = "#" + request.args['channel_name']
     if channel in config.nsfw_channels:
         unsafe = True
@@ -209,6 +210,9 @@ def gigif():
     if text == "":
         return "", 200
     gif = getgif(text, unsafe)
+    if gif == False:
+        redis.delete('LIMITER/' + request.args['user_name'] + '/gigif/1/1/minute')
+        return "No result", 200
     payload = {
         "channel": channel,
         "username": "GIF",

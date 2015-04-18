@@ -221,7 +221,7 @@ def gigif():
         return "", 200
     gif = getgif(text, unsafe)
     if gif == False:
-        redis.delete('LIMITER/' + request.args['user_name'] + '/gigif/1/1/minute')
+        redis.delete('LIMITER/' + request.args['user_name'] + '/gif/1/1/minute')
         return "No results for " + text  + ", " + random.choice(insults), 200
     payload = {
         "channel": channel,
@@ -242,7 +242,7 @@ def giphy():
         return "", 200
     giph = translate(text)
     if giph == None:
-       redis.delete('LIMITER/' + request.args['user_name'] + '/giphy/1/1/minute')
+       redis.delete('LIMITER/' + request.args['user_name'] + '/gif/1/1/minute')
        return "no giphy found, " + random.choice(insults) , 200
     payload = {
         "channel": channel,

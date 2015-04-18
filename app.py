@@ -15,7 +15,7 @@ import soundcloud
 import redis
 import random
 
-insults = ["you weeb", "you scrub", "you neckbeard", "you pleb", "you newb", "dani stop fapping please", "nuck broke it", "sucks to be you", "dani pls", "no", "the cake is probably a lie", "STOP IT PLS", "pomf"]
+insults = ["you weeb", "you scrub", "you neckbeard", "you pleb", "you newb", "dani stop fapping please", "nuck broke it", "sucks to be you", "dani pls", "no", "the cake is probably a lie", "STOP IT PLS", "pomf", "you wop"]
 
 redis = redis.StrictRedis(host='localhost', port=6379)
 

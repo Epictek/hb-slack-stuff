@@ -1,4 +1,4 @@
-from flask import Flask, request, g
+from flask import Flask, request
 import requests
 import osu_apy
 import decimal
@@ -13,6 +13,9 @@ from datetime import datetime, timedelta
 import pylast
 import soundcloud
 import redis
+import random
+
+insults = ["you weeb", "you scrub", "you neckbeard", "you pleb", "you newb", "dani stop fapping please", "nuck broke it", "sucks to be you", "dani pls", "no", "the cake is probably a lie", "STOP IT PLS", "pomf"]
 
 redis = redis.StrictRedis(host='localhost', port=6379)
 
@@ -32,11 +35,14 @@ lastfm_network = pylast.LastFMNetwork(api_key=config.lastfm_api_key, api_secret=
 
 @app.errorhandler(429)
 def ratelimit_handler(e):
-    return "ratelimit exceeded %s" % e.description, 429
+    return random.choice(insults) + ", ratelimit exceeded %s" % e.description, 429
 
 @limiter.request_filter
 def channel_whitelist():
     return request.args['channel_name'] == "random"
+
+
+gif_limit = limiter.shared_limit("1/minute", scope="gif")
 
 @limiter.limit("2/minute")
 @app.route("/np", methods=['GET'])
@@ -48,7 +54,7 @@ def np():
        return "", 200
     np = lastfm_network.get_user(userid).get_now_playing()
     if np == None:
-        return "No song playing", 200
+        return "No song playing, " + random.choice(insults), 200
     tracks = client.get('/tracks', q=np.artist.name + " " + np.title)
     try:
         url = tracks[0].permalink_url
@@ -113,7 +119,7 @@ def osu():
         }
         r = requests.post(config.webhook_url, data=json.dumps(payload))
         return "", 200
-    return "User not found", 200
+    return "User not found you, " + random.choice(insults), 200
 
 intervals = (
     ('years', 525600),
@@ -142,22 +148,26 @@ def hb():
     username = "@" + request.args['user_name']
     channel = "#" + request.args['channel_name']
     userid = request.args['text']
+    r = requests.get("https://hummingbird.me/api/v1/users/" + userid)
+    if r.status_code == 404:
+        return "User not found, " + random.choice(insults) , 200
+    user = r.json()
+    time = user['life_spent_on_anime']
+
     r = requests.get("https://hummingbird.me/user_infos/" + userid)
     if r.status_code == 404:
         return "User not found", 200
     hb = r.json()
-    user = hb['users'][0]
     info = hb['user_info']
-    avatar = user['avatar_template'].replace("{size}", "thumb")
-    time = info['life_spent_on_anime']
+
     payload = {
         "channel": channel,
         "username": "Hummingbird",
-        "icon_url": avatar,
+        "icon_url": user['avatar'],
         "text" : username,
         "attachments": [{
-                "fallback": username + " Hummingbird: https://hummingbird.me/" + user['id'],
-                "title":"<https://hummingbird.me/u/" + user['id'] + "|" + user['id'] + ">",
+                "fallback": username + " Hummingbird: https://hummingbird.me/" + userid,
+                "title":"<https://hummingbird.me/u/" + userid + "|" + userid + ">",
                 "text": user['bio'],
                 "fields": [{
                     "title": user['waifu_or_husbando'],
@@ -198,7 +208,7 @@ def getgif(searchterm, unsafe=False):
     else:
         return False
 
-@limiter.limit("1/minute")
+@gif_limit
 @app.route("/gif", methods=['GET'])
 def gigif():
     unsafe = False
@@ -212,7 +222,7 @@ def gigif():
     gif = getgif(text, unsafe)
     if gif == False:
         redis.delete('LIMITER/' + request.args['user_name'] + '/gigif/1/1/minute')
-        return "No result", 200
+        return "No results for " + text  + ", " + random.choice(insults), 200
     payload = {
         "channel": channel,
         "username": "GIF",
@@ -222,7 +232,7 @@ def gigif():
     r = requests.post(config.webhook_url, data=json.dumps(payload))
     return "", 200
 
-@limiter.limit("1/minute")
+@gif_limit
 @app.route("/giphy", methods=['GET'])
 def giphy():
     username = "@" + request.args['user_name']
@@ -232,7 +242,8 @@ def giphy():
         return "", 200
     giph = translate(text)
     if giph == None:
-       return "no giphy found", 200
+       redis.delete('LIMITER/' + request.args['user_name'] + '/giphy/1/1/minute')
+       return "no giphy found, " + random.choice(insults) , 200
     payload = {
         "channel": channel,
         "username": "Giphy",

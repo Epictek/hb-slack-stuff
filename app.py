@@ -14,15 +14,18 @@ import pylast
 import soundcloud
 import redis
 import random
+import os
+from flask.ext.sqlalchemy import SQLAlchemy
 
-insults = ["you weeb", "you scrub", "you neckbeard", "you pleb", "you newb", "dani stop fapping please", "nuck broke it", "sucks to be you", "dani pls", "no", "the cake is probably a lie", "STOP IT PLS", "pomf", "you wop"]
+insults = ("you weeb", "you scrub", "you neckbeard", "you pleb", "you newb", "dani stop fapping please", "nuck broke it", "sucks to be you", "dani pls", "no", "the cake is probably a lie", "STOP IT PLS", "pomf", "you wop")
 
 redis = redis.StrictRedis(host='localhost', port=6379)
-
 client = soundcloud.Client(client_id=config.soundcloud_client_id)
 
-app = Flask(__name__)
 
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///test.db'
+db = SQLAlchemy(app)
 limiter = Limiter(app, strategy="moving-window", storage_uri="redis://localhost:6379",  key_func = lambda :  request.args['user_name'])
 
 def verify_command(key):
@@ -35,14 +38,44 @@ lastfm_network = pylast.LastFMNetwork(api_key=config.lastfm_api_key, api_secret=
 
 @app.errorhandler(429)
 def ratelimit_handler(e):
-    return random.choice(insults) + ", ratelimit exceeded %s" % e.description, 429
+    return random.choice(insults) + ", ratelimit exceeded %ss" % e.description, 429
 
 @limiter.request_filter
 def channel_whitelist():
     return request.args['channel_name'] == "random"
 
 
-gif_limit = limiter.shared_limit("1/minute", scope="gif")
+gif_limit = limiter.shared_limit("1/2 minute", scope="gif")
+
+def resetlimit(user, limit, channel):
+    if channel != "random":
+        key = "LIMITER/" + request.args['user_name'] + "/" + limit + "/*"
+        os.system('redis-cli KEYS ' + key + ' | xargs redis-cli DEL')
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80))
+    lastfm = db.Column(db.String(80))
+    hummingbird = db.Column(db.String(80))
+    def __init__(self, username, lastfm=None, hummingbird=None):
+        self.username = username
+        self.lastfm = lastfm
+        self.hummingbird = hummingbird
+    def __repr__(self):
+        return '<User %r>' % self.username
+
+@app.route("/lf", methods=['GET'])
+def lf():
+    if request.args['text'] == "":
+        return "please enter a valid user"
+    user = User.query.filter_by(username=request.args['user_name']).first()
+    if user == None:
+        user = User(request.args['user_name'], lastfm=request.args['text'])
+        db.session.add(user)
+    else:
+        user.lastfm = lastfm=request.args['text']
+    db.session.commit()
+    return "added lastfm user"
 
 @limiter.limit("2/minute")
 @app.route("/np", methods=['GET'])
@@ -51,7 +84,12 @@ def np():
     channel = "#" + request.args['channel_name']
     userid = request.args['text']
     if userid == "":
-       return "", 200
+       userid = User.query.filter_by(username=request.args['user_name']).first()
+       if userid == None:
+           return "", 200
+       userid = userid.lastfm
+       if userid == None:
+           return "", 200
     np = lastfm_network.get_user(userid).get_now_playing()
     if np == None:
         return "No song playing, " + random.choice(insults), 200
@@ -142,6 +180,27 @@ def format_minutes(minutes):
     return ', '.join(result)
 
 
+@limiter.limit("1/2 minute")
+@app.route("/ud", methods=['GET'])
+def ud():
+    username = "@" + request.args['user_name']
+    channel = "#" + request.args['channel_name']
+    text = request.args['text']
+    r = requests.get("http://api.urbandictionary.com/v0/define?page=1&term=" + text)
+    body = r.json()
+    if body['result_type'] == "no_results":
+        return "No definition found, " + random.choice(insults) , 200
+    body = body['list'][0]
+    payload = {
+        "channel": channel,
+        "username": "ud",
+        "icon_url": "https://pbs.twimg.com/profile_images/1164168434/ud_profile2_normal.jpg",
+        "text" : username + " https://www.urbandictionary.com/define.php?term=" + body['word'].replace(" ", "+"),
+        "unfurl_links": True
+        }
+    r = requests.post(config.webhook_url, data=json.dumps(payload))
+    return ""
+
 @limiter.limit("2/minute")
 @app.route("/hb", methods=['GET'])
 def hb():
@@ -167,7 +226,7 @@ def hb():
         "text" : username,
         "attachments": [{
                 "fallback": username + " Hummingbird: https://hummingbird.me/" + userid,
-                "title":"<https://hummingbird.me/u/" + userid + "|" + userid + ">",
+                "title":"<https://hummingbird.me/u/" + info['id'] + "|" + info['id'] + ">",
                 "text": user['bio'],
                 "fields": [{
                     "title": user['waifu_or_husbando'],
@@ -208,6 +267,25 @@ def getgif(searchterm, unsafe=False):
     else:
         return False
 
+
+def getimg(searchterm, unsafe=False):
+    searchterm = quote(searchterm)
+    safe = "&safe=" if unsafe else "&safe=active"
+
+    searchurl = "https://www.google.com/search?tbm=isch&q={0}{1}".format(searchterm, safe)
+    # this is an old iphone user agent. Seems to make google return good results.
+    useragent = "Mozilla/5.0 (iPhone; U; CPU iPhone OS 4_0 like Mac OS X; en-us) AppleWebKit/532.9 (KHTML, like Gecko) Versio  n/4.0.5 Mobile/8A293 Safari/6531.22.7"
+
+    result = requests.get(searchurl, headers={"User-agent": useragent}).text
+
+    images = re.findall(r'imgurl.*?(http.*?)\\', result)
+    shuffle(images)
+
+    if len(images) > 1:
+        return unquote(images[0])
+    else:
+        return False
+
 @gif_limit
 @app.route("/gif", methods=['GET'])
 def gigif():
@@ -221,7 +299,7 @@ def gigif():
         return "", 200
     gif = getgif(text, unsafe)
     if gif == False:
-        redis.delete('LIMITER/' + request.args['user_name'] + '/gif/1/1/minute')
+        resetlimit(request.args['user_name'], "gif", request.args['channel_name'])
         return "No results for " + text  + ", " + random.choice(insults), 200
     payload = {
         "channel": channel,
@@ -233,6 +311,31 @@ def gigif():
     return "", 200
 
 @gif_limit
+@app.route("/img", methods=['GET'])
+def gimg():
+    unsafe = False
+    username = "@" + request.args['user_name']
+    channel = "#" + request.args['channel_name']
+    if channel in config.nsfw_channels:
+        unsafe = True
+    text = request.args['text']
+    if text == "":
+        return "", 200
+    image = getimg(text, unsafe)
+    if image == False:
+        resetlimit(request.args['user_name'], "gif", request.args['channel_name'])
+        return "No results for " + text  + ", " + random.choice(insults), 200
+    payload = {
+        "channel": channel,
+        "username": "Image",
+        "icon_url": "https://a.pomf.se/ghfazr.jpg",
+        "text": username + ' "' + text + '" ' + image
+        }
+    r = requests.post(config.webhook_url, data=json.dumps(payload))
+    return "", 200
+
+
+@gif_limit
 @app.route("/giphy", methods=['GET'])
 def giphy():
     username = "@" + request.args['user_name']
@@ -242,7 +345,7 @@ def giphy():
         return "", 200
     giph = translate(text)
     if giph == None:
-       redis.delete('LIMITER/' + request.args['user_name'] + '/gif/1/1/minute')
+       resetlimit(request.args['user_name'], "gif", request.args['channel_name'])
        return "no giphy found, " + random.choice(insults) , 200
     payload = {
         "channel": channel,
@@ -253,5 +356,39 @@ def giphy():
     r = requests.post(config.webhook_url, data=json.dumps(payload))
     return "", 200
 
+
+def youtube(searchterm):
+    url = "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&key=" + config.gapi + "&q=" + searchterm
+    r = requests.get(url)
+    r = r.json()
+    if r['pageInfo']['totalResults'] == 0:
+        return False
+    ytid = "https://www.youtube.com/watch?v=" + r['items'][0]['id']['videoId']
+    return ytid
+
+
+@app.route("/yt", methods=['GET'])
+def yt():
+    username = "@" + request.args['user_name']
+    channel = "#" + request.args['channel_name']
+    text = request.args['text']
+
+    video = youtube(text)
+    if video == False:
+#        resetlimit(request.args['user_name'], "gif", request.args['channel_name'])
+        return "No results for " + text  + ", " + random.choice(insults), 200
+
+    if text == "":
+        return "", 200
+    payload = {
+        "channel": channel,
+        "username": "YouTube",
+        "icon_url": "https://upload.wikimedia.org/wikipedia/commons/4/41/YouTube_icon_block.png",
+        "text": username + ' "' + text + '" ' + video
+        }
+    r = requests.post(config.webhook_url, data=json.dumps(payload))
+    return "", 200
+
+
 if __name__ == "__main__":
-        app.run(debug=True, host='0.0.0.0')
+        app.run(debug=False, host='0.0.0.0')

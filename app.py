@@ -11,7 +11,6 @@ from flask_limiter import Limiter
 import config
 from datetime import datetime, timedelta
 import pylast
-import soundcloud
 import redis
 import random
 import os
@@ -20,11 +19,10 @@ from flask.ext.sqlalchemy import SQLAlchemy
 insults = ("you weeb", "you scrub", "you neckbeard", "you pleb", "you newb", "dani stop fapping please", "nuck broke it", "sucks to be you", "dani pls", "no", "the cake is probably a lie", "STOP IT PLS", "pomf", "you wop")
 
 redis = redis.StrictRedis(host='localhost', port=6379)
-client = soundcloud.Client(client_id=config.soundcloud_client_id)
 
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///test.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db'
 db = SQLAlchemy(app)
 limiter = Limiter(app, strategy="moving-window", storage_uri="redis://localhost:6379",  key_func = lambda :  request.args['user_name'])
 
@@ -93,25 +91,15 @@ def np():
     np = lastfm_network.get_user(userid).get_now_playing()
     if np == None:
         return "No song playing, " + random.choice(insults), 200
-    tracks = client.get('/tracks', q=np.artist.name + " " + np.title)
-    try:
-        url = tracks[0].permalink_url
-    except:
-        url = ""
+    print(np)
+#    tracks = client.get('/tracks', q=np.artist.name + " " + np.title)
+#    print(tracks)
     payload = {
         "channel": channel,
         "username": "last.fm",
         "icon_url": "https://a.pomf.se/lxwffj.png",
         "text": username + ": <http://last.fm/user/" + userid + "|" +  userid + "> is currently listening to " + np.artist.name + " - " + np.title + "\n" ,
          "unfurl_links": False
-    }
-    r = requests.post(config.webhook_url, data=json.dumps(payload))
-    payload = {
-        "channel": channel,
-        "username": "last.fm",
-        "icon_url": "https://a.pomf.se/lxwffj.png",
-        "text": url,
-        "unfurl_links": True
     }
     r = requests.post(config.webhook_url, data=json.dumps(payload))
     return "", 200
@@ -130,8 +118,9 @@ def osu():
         payload = {
         "channel": channel,
         "username": "Osu!",
-        "icon_url": "http://a.ppy.sh/" + osu['user_id'] + "_1.png",
+        "icon_url": "http://a.pomf.hummingbird.moe/bnzlnp.png",
         "attachments": [{
+                "thumb_url": "http://a.ppy.sh/" + osu['user_id'] + "_1.png",
                 "fallback": username + " Osu! stats for:" + osu['username'] + "\n Accuracy:" + osu['accuracy'] + " Rank: " + osu['pp_rank'] + " PP:" + osu['pp_raw'] + " Plays:" +osu['playcount'],
                 "text": username + " Osu! stats for: <https://osu.ppy.sh/u/" + osu['username'] + "|" + osu['username'] + "> :" + osu['country'] + ":",
                 "title" : osu['username'],
@@ -222,9 +211,10 @@ def hb():
     payload = {
         "channel": channel,
         "username": "Hummingbird",
-        "icon_url": user['avatar'],
+        "icon_url": "https://github.com/hummingbird-me/hummingbird/raw/master/public/images/tiny-logo.jpg",
         "text" : username,
         "attachments": [{
+                "thumb_url": user['avatar'],
                 "fallback": username + " Hummingbird: https://hummingbird.me/" + userid,
                 "title":"<https://hummingbird.me/u/" + info['id'] + "|" + info['id'] + ">",
                 "text": user['bio'],
@@ -246,6 +236,54 @@ def hb():
         }
     r = requests.post(config.webhook_url, data=json.dumps(payload))
     return "", 200
+
+
+@app.route("/hb", methods=['POST'])
+def hummingbird():
+    username = "@" + request.args['user_name']
+    channel = "#" + request.args['channel_name']
+    userid = request.args['text']
+    r = requests.get("https://hummingbird.me/api/v1/users/" + userid)
+    if r.status_code == 404:
+        return "User not found, " + random.choice(insults) , 200
+    user = r.json()
+    time = user['life_spent_on_anime']
+
+    r = requests.get("https://hummingbird.me/user_infos/" + userid)
+    if r.status_code == 404:
+        return "User not found", 200
+    hb = r.json()
+    info = hb['user_info']
+
+    payload = {
+        "channel": channel,
+        "username": "Hummingbird",
+        "icon_url": "https://github.com/hummingbird-me/hummingbird/raw/master/public/images/tiny-logo.jpg",
+        "text" : username,
+        "attachments": [{
+                "thumb_url": user['avatar'],
+                "fallback": username + " Hummingbird: https://hummingbird.me/" + userid,
+                "title":"<https://hummingbird.me/u/" + info['id'] + "|" + info['id'] + ">",
+                "text": user['bio'],
+                "fields": [{
+                    "title": user['waifu_or_husbando'],
+                    "value": user['waifu'],
+                    "short": False
+                }, {
+                    "title": "Life spent on cartoons",
+                    "value": format_minutes(time),
+                    "short": False
+                }, {
+                    "title": "Anime Watched",
+                    "value": info['anime_watched'],
+                    "short": True
+                }],
+            "color": "#EC8661"
+        }]
+        }
+    r = requests.post(config.webhook_url, data=json.dumps(payload))
+    return "", 200
+
 
 #gif code modified from https://github.com/llimllib/limbo/blob/master/limbo/plugins/gif.py
 
@@ -277,7 +315,7 @@ def getimg(searchterm, unsafe=False):
     useragent = "Mozilla/5.0 (iPhone; U; CPU iPhone OS 4_0 like Mac OS X; en-us) AppleWebKit/532.9 (KHTML, like Gecko) Versio  n/4.0.5 Mobile/8A293 Safari/6531.22.7"
 
     result = requests.get(searchurl, headers={"User-agent": useragent}).text
-
+    print(result)
     images = re.findall(r'imgurl.*?(http.*?)\\', result)
     shuffle(images)
 
@@ -389,6 +427,26 @@ def yt():
     r = requests.post(config.webhook_url, data=json.dumps(payload))
     return "", 200
 
+@limiter.limit("1/60 minute")
+@app.route("/lenny", methods=['GET'])
+def lenny():
+    username = request.args['user_name']
+    channel = "#" + request.args['channel_name']
+    text = request.args['text']
+
+    url = "https://slack.com/api/users.info?token=xoxp-4330547435-4330547437-4306921594-7a8441&user=" + request.args['user_id']
+    r = requests.get(url)
+    r = r.json()
+    avatar = r['user']['profile']['image_192']
+
+    payload = {
+        "channel": channel,
+        "username": username,
+        "icon_url": avatar,
+        "text": text + " :lenn::lennn:"
+        }
+    r = requests.post(config.webhook_url, data=json.dumps(payload))
+    return "", 200
 
 if __name__ == "__main__":
         app.run(debug=False, host='0.0.0.0')

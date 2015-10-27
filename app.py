@@ -287,8 +287,19 @@ def hummingbird():
 
 #gif code modified from https://github.com/llimllib/limbo/blob/master/limbo/plugins/gif.py
 
+def octal_to_html_escape(re_match):
+    # an octal escape of the form '\75' (which ought to become '%3d', the
+    # url-escaped form of "=". Strip the leading \
+    s = re_match.group(0)[1:]
+
+    # convert octal to hex and strip the leading '0x'
+    h = hex(int(s, 8))[2:]
+
+    return "%{0}".format(h)
+
 def getgif(searchterm, unsafe=False):
     searchterm = quote(searchterm)
+
     safe = "&safe=" if unsafe else "&safe=active"
     searchurl = "https://www.google.com/search?tbs=itp:animated&tbm=isch&q={0}{1}".format(searchterm, safe)
 
@@ -297,32 +308,33 @@ def getgif(searchterm, unsafe=False):
 
     result = requests.get(searchurl, headers={"User-agent": useragent}).text
 
-    gifs = re.findall(r'imgurl.*?(http.*?)\\', result)
+    gifs = list(map(unescape, re.findall(r"var u='(.*?)'", result)))
     shuffle(gifs)
 
-    if len(gifs) > 1:
-        return unquote(gifs[0])
+    if gifs:
+        return gifs[0]
     else:
-        return False
+        return ""
 
 
 def getimg(searchterm, unsafe=False):
     searchterm = quote(searchterm)
-    safe = "&safe=" if unsafe else "&safe=active"
 
+    safe = "&safe=" if unsafe else "&safe=active"
     searchurl = "https://www.google.com/search?tbm=isch&q={0}{1}".format(searchterm, safe)
+
     # this is an old iphone user agent. Seems to make google return good results.
     useragent = "Mozilla/5.0 (iPhone; U; CPU iPhone OS 4_0 like Mac OS X; en-us) AppleWebKit/532.9 (KHTML, like Gecko) Versio  n/4.0.5 Mobile/8A293 Safari/6531.22.7"
 
     result = requests.get(searchurl, headers={"User-agent": useragent}).text
-    print(result)
-    images = re.findall(r'imgurl.*?(http.*?)\\', result)
+
+    images = list(map(unescape, re.findall(r"var u='(.*?)'", result)))
     shuffle(images)
 
-    if len(images) > 1:
-        return unquote(images[0])
+    if images:
+        return images[0]
     else:
-        return False
+        return ""
 
 @gif_limit
 @app.route("/gif", methods=['GET'])
@@ -434,7 +446,7 @@ def lenny():
     channel = "#" + request.args['channel_name']
     text = request.args['text']
 
-    url = "https://slack.com/api/users.info?token=xoxp-4330547435-4330547437-4306921594-7a8441&user=" + request.args['user_id']
+    url = "https://slack.com/api/users.info?token=" + config.token + "&user=" + request.args['user_id']
     r = requests.get(url)
     r = r.json()
     avatar = r['user']['profile']['image_192']

@@ -297,6 +297,10 @@ def octal_to_html_escape(re_match):
 
     return "%{0}".format(h)
 
+def unescape(url):
+    # google uses octal escapes for god knows what reason
+    return re.sub(r"\\..", octal_to_html_escape, url)
+
 def getgif(searchterm, unsafe=False):
     searchterm = quote(searchterm)
 
@@ -461,4 +465,4 @@ def lenny():
     return "", 200
 
 if __name__ == "__main__":
-        app.run(debug=False, host='0.0.0.0')
+        app.run(debug=True, host='0.0.0.0')
